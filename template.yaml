@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  first-node-app
+
+  Sample SAM Template for first-node-app
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 6
+    MemorySize: 128
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Tracing: Active
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+  Api:
+    TracingEnabled: true
+Resources:
+  IntercomApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub
+        - ${ResourceName} From Stack ${AWS::StackName}
+        - ResourceName: IntercomApiGateway
+      StageName: prod
+      DefinitionBody:
+        openapi: "3.0"
+        info: {}
+        paths:
+          /{proxy+}:
+            x-amazon-apigateway-any-method:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BoomFunction.Arn}/invocations
+              responses: {}
+      MethodSettings:
+        - ResourcePath:  "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO # Enable logging for this endpoint
+          MetricsEnabled: True # Enable metrics for this endpoint
+      EndpointConfiguration: EDGE
+      TracingEnabled: true
+      Cors:
+        AllowMethods: "'GET,POST,PUT, OPTIONS'"
+        AllowHeaders: "'Content-Type,Origin,x-access-token,Accept,Access-Control-Allow-Headers'"
+        AllowOrigin: "'*'"
+
+  BoomFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: BoomFunction
+      CodeUri: main/
+      Handler: app.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+        ApiRoot:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Environment:
+        Variables:
+          POWERTOOLS_SERVICE_NAME: BoomFunction
+          POWERTOOLS_METRICS_NAMESPACE: Powertools
+          LOG_LEVEL: INFO
+      Tags:
+        LambdaPowertools: node
+
+  BoomFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${BoomFunction}
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: "true"
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: Default Origin Access Control
+        Name: !Sub "${AWS::StackName}-s3OAC"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  BoomFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt BoomFunction.Arn
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${IntercomApiGateway}/ANY/{proxy+}"
+
+  AssetBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${AWS::StackName}-assets"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  AssetBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref AssetBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "s3:GetObject"
+            Resource: !Sub ${AssetBucket.Arn}/*
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${IntercomCloudfront}
+  CloudfrontFunctionRewriteApi:
+    Type: AWS::CloudFront::Function
+    Properties:
+      AutoPublish: true
+      FunctionCode: !Sub |
+        function handler(event) {
+            var request = event.request;
+            request.uri = request.uri.replace(/^\/[^/]*\//, "/"); 
+            return request;
+        }
+      FunctionConfig:
+        Comment: "Rerites URL to support API path"
+        Runtime: cloudfront-js-2.0
+      Name: !Sub "${AWS::StackName}-rewriteAPIPath"
+
+  IntercomCloudfront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        # Aliases:
+        #   - <URL>
+        HttpVersion: http2
+        Enabled: true
+        IPV6Enabled: false
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Logging:
+          Bucket: !GetAtt AccessLogBucket.DomainName
+        ViewerCertificate:
+          # AcmCertificateArn: "arn:aws:acm:us-east-1:335594149496:certificate/c1f313c8-1578-45d4-b34c-92a74f1e075f"
+          # MinimumProtocolVersion: "TLSv1.2_2021"
+          # SslSupportMethod: sni-only
+          CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: "AssetBucket"
+            DomainName: !GetAtt AssetBucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+          - Id: "API"
+            DomainName: !Sub
+              - ${apigId}.execute-api.${AWS::Region}.amazonaws.com
+              - { apigId: !Ref IntercomApiGateway }
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: "https-only"
+        DefaultCacheBehavior:
+          TargetOriginId: AssetBucket
+          ViewerProtocolPolicy: "redirect-to-https"
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors:
+          - PathPattern: "/api*"
+            TargetOriginId: API
+            ViewerProtocolPolicy: "redirect-to-https"
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt CloudfrontFunctionRewriteApi.FunctionMetadata.FunctionARN
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+  AccessLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketName: !Sub "${AWS::StackName}-accesslog"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+  AccessLogBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref AccessLogBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub ${AccessLogBucket.Arn}/*
+              - !GetAtt AccessLogBucket.Arn
+            Condition:
+              Bool:
+                aws:SecureTransport: false
