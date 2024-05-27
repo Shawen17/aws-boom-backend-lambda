@@ -96,8 +96,6 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${BoomFunction}
 
- 
-
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
     Properties:
