@@ -1,8 +1,6 @@
 const UserProfile = require("../models/profile.models");
 const Loan = require("../models/loan.model");
-const fs = require("fs");
 const { mediaUpload } = require("../middlewares");
-const path = require("path");
 const AWS = require("aws-sdk");
 const dotenv = require("dotenv");
 dotenv.config();
@@ -12,8 +10,6 @@ AWS.config.update({
   secretAccessKey: process.env.SECRET_KEY,
   region: process.env.REGION,
 });
-
-const s3 = new AWS.S3();
 
 exports.allAccess = (req, res) => {
   res.status(200).json("Public Content.");

@@ -22,7 +22,7 @@ const uploadToS3 = (file) => {
   } else {
     return new Promise((resolve, reject) => {
       const params = {
-        Bucket: process.env.AWS_STORAGE_BUCKET_NAME,
+        Bucket: process.env.STORAGE_BUCKET_NAME,
         Key: `media/avatars/${file.originalname}`,
         Body: file.buffer,
         ContentDisposition: "inline",
