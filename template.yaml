@@ -89,7 +89,7 @@ Resources:
           LOG_LEVEL: INFO
       Tags:
         LambdaPowertools: node
-        
+
       
   LatestVersionErrorMetricGreaterThanZeroAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -150,7 +150,7 @@ Resources:
   AssetBucket:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: PublicReadWrite
+      AccessControl: Private
       BucketName: !Sub "${AWS::StackName}-assets"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
