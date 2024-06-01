@@ -89,6 +89,18 @@ Resources:
           LOG_LEVEL: INFO
       Tags:
         LambdaPowertools: node
+      AutoPublishAlias: live
+      DeploymentPreference:
+        Enabled: true
+        Type: Canary10Percent10Minutes 
+        Alarms:
+          - Ref: AliasErrorMetricGreaterThanZeroAlarm
+          - Ref: LatestVersionErrorMetricGreaterThanZeroAlarm
+        Hooks:
+          PreTraffic:
+            Ref: PreTrafficLambdaFunction
+          PostTraffic:
+            Ref: PostTrafficLambdaFunction
 
   BoomFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -131,7 +143,7 @@ Resources:
   AssetBucket:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: Private
+      AccessControl: PublicReadWrite
       BucketName: !Sub "${AWS::StackName}-assets"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
