@@ -13,14 +13,14 @@ Globals:
     Runtime: nodejs20.x
     Environment:
       Variables:
-        ACCESS_KEY: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/ACCESS_KEY}}'
-        CLIENT_URL: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/CLIENT_URL}}'
-        MONGO_URL: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/MONGO_URL}}'
-        REACT_APP_MEDIA_URL: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/REACT_APP_MEDIA_URL}}'
-        REGION: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/REGION}}'
-        SECRET_KEY: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/SECRET_KEY}}'
-        STORAGE_BUCKET_NAME: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/STORAGE_BUCKET_NAME}}'
-        TOKEN_SECRET: !Sub '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/TOKEN_SECRET}}'
+        ACCESS_KEY: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/ACCESS_KEY}}'
+        CLIENT_URL: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/CLIENT_URL}}'
+        MONGO_URL: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/MONGO_URL}}'
+        REACT_APP_MEDIA_URL:  '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/REACT_APP_MEDIA_URL}}'
+        REGION: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/REGION}}'
+        SECRET_KEY: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/SECRET_KEY}}'
+        STORAGE_BUCKET_NAME: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/STORAGE_BUCKET_NAME}}'
+        TOKEN_SECRET: '{{resolve:ssm:arn:aws:ssm:eu-north-1:378523290404:parameter/TOKEN_SECRET}}'
 
     Architectures:
       - arm64
@@ -96,15 +96,48 @@ Resources:
         Alarms:
           - Ref: AliasErrorMetricGreaterThanZeroAlarm
           - Ref: LatestVersionErrorMetricGreaterThanZeroAlarm
-        Hooks:
-          PreTraffic:
-            Ref: PreTrafficLambdaFunction
-          PostTraffic:
-            Ref: PostTrafficLambdaFunction
+        
 
+  AliasErrorMetricGreaterThanZeroAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Alarm if alias error metric greater than zero"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BoomFunction
+        - Name: Resource
+          Value: !Sub "${BoomFunction}:live"
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  LatestVersionErrorMetricGreaterThanZeroAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Alarm if latest version error metric greater than zero"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BoomFunction
+        - Name: Resource
+          Value: !Sub "${BoomFunction}:LATEST"
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  
   BoomFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub /aws/lambda/${BoomFunction}
 
@@ -143,7 +176,9 @@ Resources:
   AssetBucket:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: PublicReadWrite
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
       BucketName: !Sub "${AWS::StackName}-assets"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
@@ -238,7 +273,6 @@ Resources:
   AccessLogBucket:
     Type: AWS::S3::Bucket
     Properties:
-      AccessControl: LogDeliveryWrite
       BucketName: !Sub "${AWS::StackName}-accesslog"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
