@@ -89,33 +89,8 @@ Resources:
           LOG_LEVEL: INFO
       Tags:
         LambdaPowertools: node
-      AutoPublishAlias: live
-      DeploymentPreference:
-        Enabled: true
-        Type: Canary10Percent10Minutes 
-        Alarms:
-          - Ref: AliasErrorMetricGreaterThanZeroAlarm
-          - Ref: LatestVersionErrorMetricGreaterThanZeroAlarm
         
-
-  AliasErrorMetricGreaterThanZeroAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: "Alarm if alias error metric greater than zero"
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions:
-        - Name: FunctionName
-          Value: !Ref BoomFunction
-        - Name: Resource
-          Value: !Sub "${BoomFunction}:live"
-      Statistic: Sum
-      Period: 60
-      EvaluationPeriods: 1
-      Threshold: 0
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
-
+      
   LatestVersionErrorMetricGreaterThanZeroAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -137,7 +112,6 @@ Resources:
   BoomFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub /aws/lambda/${BoomFunction}
 
@@ -176,9 +150,7 @@ Resources:
   AssetBucket:
     Type: AWS::S3::Bucket
     Properties:
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: BucketOwnerPreferred
+      AccessControl: PublicReadWrite
       BucketName: !Sub "${AWS::StackName}-assets"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
@@ -273,6 +245,7 @@ Resources:
   AccessLogBucket:
     Type: AWS::S3::Bucket
     Properties:
+      AccessControl: LogDeliveryWrite
       BucketName: !Sub "${AWS::StackName}-accesslog"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
